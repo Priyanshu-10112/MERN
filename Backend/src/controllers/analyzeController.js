@@ -1,9 +1,12 @@
 import { parseCSV } from '../utils/csvParser.js';
 import { parseExcel } from '../utils/excelParser.js';
 import { groupByTeam, calculateTeamSummary, generateSummaryText } from '../utils/dataProcessor.js';
-import { evaluateTeam } from '../services/aiService.js';
+import { evaluateTeam, analyzeFlexibleData } from '../services/aiService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logRequest, logError } from '../middleware/logger.js';
+import Upload from '../models/Upload.js';
+import Analysis from '../models/Analysis.js';
+import mongoose from 'mongoose';
 import path from 'path';
 import fs from 'fs';
 
@@ -28,95 +31,135 @@ export const analyzeData = async (req, res, next) => {
     const filePath = req.file.path;
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
 
-    // Get column mapping from request body (user-defined)
+    // Get analysis configuration
     let columnMapping = null;
+    let analysisType = req.body.analysisType || 'team-evaluation';
+    
     if (req.body.columnMapping) {
       try { columnMapping = JSON.parse(req.body.columnMapping); }
       catch (e) { columnMapping = null; }
     }
 
-    // Step 1: Always parse as raw/default - NO column mapping at parse stage
+    // Step 1: Parse file
     let rawData;
     if (fileExtension === '.csv') {
       rawData = await parseCSV(filePath);
     } else if (fileExtension === '.xlsx' || fileExtension === '.xls') {
-      // parseExcel with no options returns {headers, data:[...]} format
       rawData = await parseExcel(filePath);
       fs.unlink(filePath, (err) => { if (err) console.error('Error deleting file:', err); });
     } else {
       throw new AppError('Unsupported file format', 400);
     }
 
-    // Step 2: Normalize to array
     let parsedData = Array.isArray(rawData) ? rawData : (rawData?.data || []);
+    let headers = rawData?.headers || (parsedData[0] ? Object.keys(parsedData[0]) : []);
 
-    console.log(`Parsed ${parsedData.length} rows. Sample row keys:`, parsedData[0] ? Object.keys(parsedData[0]) : 'none');
-    if (columnMapping) console.log('Column mapping:', columnMapping);
+    console.log(`Parsed ${parsedData.length} rows. Analysis type: ${analysisType}`);
 
-    // Step 3: Apply column mapping to remap user columns → standard fields
-    if (columnMapping && parsedData.length > 0) {
-      parsedData = parsedData.map(row => {
-        const get = (userCol) => {
-          if (!userCol) return '';
-          // exact match
-          if (row[userCol] !== undefined) return row[userCol];
-          // case-insensitive match
-          const key = Object.keys(row).find(
-            k => k?.toString().toLowerCase().trim() === userCol?.toString().toLowerCase().trim()
-          );
-          return key ? row[key] : '';
-        };
+    let results;
+    let uploadRecord = null;
 
-        return {
-          teamName:     String(get(columnMapping.teamName)     || '').trim(),
-          projectTitle: String(get(columnMapping.projectTitle) || '').trim(),
-          update:       String(get(columnMapping.update)       || 'No update').trim(),
-          completion:   parseFloat(get(columnMapping.completion)) || 0,
-          date:         parseDate(get(columnMapping.date))
-        };
-      }).filter(row => row.teamName !== '');
+    // Save upload metadata to MongoDB
+    if (mongoose.connection.readyState === 1) {
+      try {
+        uploadRecord = await Upload.create({
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          fileType: fileExtension.replace('.', ''),
+          rowCount: parsedData.length,
+          columnCount: headers.length,
+          columns: headers
+        });
+      } catch (dbError) {
+        console.log('Upload DB save skipped:', dbError.message);
+      }
     }
 
-    if (!parsedData || parsedData.length === 0) {
-      throw new AppError('No valid data found. Please check your column mapping.', 400);
+    // Step 2: Analyze based on type
+    if (analysisType === 'team-evaluation') {
+      // Apply column mapping for team evaluation
+      if (columnMapping && parsedData.length > 0) {
+        parsedData = parsedData.map(row => {
+          const get = (userCol) => {
+            if (!userCol) return '';
+            if (row[userCol] !== undefined) return row[userCol];
+            const key = Object.keys(row).find(
+              k => k?.toString().toLowerCase().trim() === userCol?.toString().toLowerCase().trim()
+            );
+            return key ? row[key] : '';
+          };
+
+          return {
+            teamName:     String(get(columnMapping.teamName)     || '').trim(),
+            projectTitle: String(get(columnMapping.projectTitle) || '').trim(),
+            update:       String(get(columnMapping.update)       || 'No update').trim(),
+            completion:   parseFloat(get(columnMapping.completion)) || 0,
+            date:         parseDate(get(columnMapping.date))
+          };
+        }).filter(row => row.teamName !== '');
+      }
+
+      if (!parsedData || parsedData.length === 0) {
+        throw new AppError('No valid data found. Please check your column mapping.', 400);
+      }
+
+      const groupedData = groupByTeam(parsedData);
+      results = {};
+
+      for (const teamData of groupedData) {
+        const summary = calculateTeamSummary(teamData);
+        const summaryText = generateSummaryText(summary);
+        const evaluation = await evaluateTeam({ ...summary, summaryText });
+
+        results[summary.teamName] = {
+          grade: evaluation.grade,
+          score: evaluation.score,
+          strengths: evaluation.strengths,
+          weaknesses: evaluation.weaknesses,
+          suggestions: evaluation.suggestions,
+          summary: {
+            totalUpdates: summary.totalUpdates,
+            averageCompletion: summary.averageCompletion,
+            lastUpdateDate: summary.lastUpdateDate,
+            consistencyScore: summary.consistencyScore
+          }
+        };
+      }
+    } else {
+      // Flexible AI analysis for any data
+      results = await analyzeFlexibleData(parsedData, headers, analysisType);
     }
 
-    // Step 4: Group by team
-    const groupedData = groupByTeam(parsedData);
-
-    // Step 5: Process each team with AI
-    const results = {};
-
-    for (const teamData of groupedData) {
-      const summary = calculateTeamSummary(teamData);
-      const summaryText = generateSummaryText(summary);
-      const evaluation = await evaluateTeam({ ...summary, summaryText });
-
-      results[summary.teamName] = {
-        grade: evaluation.grade,
-        score: evaluation.score,
-        strengths: evaluation.strengths,
-        weaknesses: evaluation.weaknesses,
-        suggestions: evaluation.suggestions,
-        summary: {
-          totalUpdates: summary.totalUpdates,
-          averageCompletion: summary.averageCompletion,
-          lastUpdateDate: summary.lastUpdateDate,
-          consistencyScore: summary.consistencyScore
-        }
-      };
+    // Save analysis to MongoDB
+    if (mongoose.connection.readyState === 1 && uploadRecord) {
+      try {
+        await Analysis.create({
+          uploadId: uploadRecord._id,
+          analysisType,
+          results,
+          metadata: {
+            processingTime: `${Date.now() - startTime}ms`,
+            recordCount: parsedData.length,
+            aiModel: 'groq-llama3-8b-8192'
+          }
+        });
+      } catch (dbError) {
+        console.log('Analysis DB save skipped:', dbError.message);
+      }
     }
 
     const duration = Date.now() - startTime;
-    const teamCount = Object.keys(results).length;
-    logRequest(req, `Analysis completed in ${duration}ms for ${teamCount} teams`);
+    const teamCount = typeof results === 'object' ? Object.keys(results).length : 1;
+    logRequest(req, `Analysis completed in ${duration}ms`);
 
     res.status(200).json({
       success: true,
       message: 'Analysis completed successfully',
+      uploadId: uploadRecord?._id,
       data: results,
       metadata: {
-        totalTeams: teamCount,
+        analysisType,
+        totalRecords: parsedData.length,
         processingTime: `${duration}ms`,
         timestamp: new Date().toISOString()
       }
@@ -129,12 +172,23 @@ export const analyzeData = async (req, res, next) => {
 
 export const getAnalysisHistory = async (req, res, next) => {
   try {
-    // Return empty array since we're not using database
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(200).json({ 
+        success: true, 
+        data: [], 
+        message: 'Database not connected' 
+      });
+    }
+
+    const analyses = await Analysis.find()
+      .populate('uploadId', 'fileName uploadedAt')
+      .sort({ createdAt: -1 })
+      .limit(20);
+
     res.status(200).json({ 
       success: true, 
-      data: [], 
-      count: 0, 
-      message: 'Analysis history not available without database. Results are shown immediately after upload.' 
+      data: analyses,
+      count: analyses.length 
     });
   } catch (error) {
     next(error);

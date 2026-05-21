@@ -1,6 +1,6 @@
 import { parseExcel } from '../utils/excelParser.js';
 import { parseCSV } from '../utils/csvParser.js';
-import { evaluateWithAI } from '../services/aiService.js';
+import { analyzeFlexibleData } from '../services/aiService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logRequest, logError } from '../middleware/logger.js';
 import path from 'path';
@@ -256,21 +256,8 @@ const generateAIEvaluation = async (data) => {
     throw new AppError('No data to evaluate', 400);
   }
 
-  // Create a summary text for AI
-  const summaryText = `
-Data Analysis Request:
-- Total Records: ${dataArray.length}
-- Columns: ${Object.keys(dataArray[0]).join(', ')}
-- Sample Data: ${JSON.stringify(dataArray.slice(0, 3), null, 2)}
-
-Please provide:
-1. Key insights from this data
-2. Patterns or trends identified
-3. Recommendations for improvement
-4. Overall assessment
-  `.trim();
-
-  const evaluation = await evaluateWithAI(summaryText);
+  const headers = Object.keys(dataArray[0]);
+  const evaluation = await analyzeFlexibleData(dataArray, headers, 'ai-evaluation');
   
   return {
     evaluation,

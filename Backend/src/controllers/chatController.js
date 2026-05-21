@@ -1,13 +1,16 @@
 import { chatWithAI } from '../services/aiService.js';
-import ProjectAnalysis from '../models/ProjectAnalysis.js';
+import Analysis from '../models/Analysis.js';
+import Upload from '../models/Upload.js';
+import ChatHistory from '../models/ChatHistory.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logRequest, logError } from '../middleware/logger.js';
+import mongoose from 'mongoose';
 
 export const chat = async (req, res, next) => {
   const startTime = Date.now();
   
   try {
-    const { question, includeContext } = req.body;
+    const { question, uploadId } = req.body;
     
     logRequest(req, `Chat question: "${question.substring(0, 50)}..."`);
 
@@ -17,27 +20,53 @@ export const chat = async (req, res, next) => {
 
     let context = null;
 
-    // If context is requested, fetch recent analyses
-    if (includeContext) {
-      const recentAnalyses = await ProjectAnalysis.find()
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .select('-__v');
+    // If uploadId provided, fetch that specific analysis
+    if (uploadId && mongoose.connection.readyState === 1) {
+      try {
+        const analysis = await Analysis.findOne({ uploadId })
+          .populate('uploadId', 'fileName columns rowCount')
+          .sort({ createdAt: -1 });
 
-      context = {
-        message: 'Recent team analyses',
-        analyses: recentAnalyses.map(a => ({
-          teamName: a.teamName,
-          grade: a.grade,
-          score: a.score,
-          summary: a.summary,
-          strengths: a.strengths,
-          weaknesses: a.weaknesses
-        }))
-      };
+        if (analysis) {
+          context = {
+            fileName: analysis.uploadId?.fileName,
+            columns: analysis.uploadId?.columns,
+            rowCount: analysis.uploadId?.rowCount,
+            analysisType: analysis.analysisType,
+            results: analysis.results,
+            insights: analysis.insights
+          };
+        }
+      } catch (dbError) {
+        console.log('Context fetch skipped:', dbError.message);
+      }
     }
 
     const answer = await chatWithAI(question, context);
+
+    // Save chat history
+    if (mongoose.connection.readyState === 1 && uploadId) {
+      try {
+        let chatHistory = await ChatHistory.findOne({ uploadId });
+        
+        if (!chatHistory) {
+          chatHistory = await ChatHistory.create({
+            uploadId,
+            messages: [],
+            context
+          });
+        }
+        
+        chatHistory.messages.push(
+          { role: 'user', content: question },
+          { role: 'assistant', content: answer }
+        );
+        
+        await chatHistory.save();
+      } catch (dbError) {
+        console.log('Chat history save skipped:', dbError.message);
+      }
+    }
 
     const duration = Date.now() - startTime;
     logRequest(req, `Chat response generated in ${duration}ms`);

@@ -163,28 +163,43 @@ export const chatWithAI = async (question, context = null) => {
 };
 
 // Flexible AI evaluation for any data structure
-export const evaluateWithAI = async (dataText) => {
+export const analyzeFlexibleData = async (data, headers, analysisType = 'auto-ai') => {
   const groq = getGroq();
+  
+  // Prepare data summary
+  const sampleRows = data.slice(0, 5);
+  const dataText = `
+Headers: ${headers.join(', ')}
+Total Rows: ${data.length}
+Sample Data (first 5 rows):
+${JSON.stringify(sampleRows, null, 2)}
+  `.trim();
+
   if (!groq) {
     return {
-      insights: ['Data uploaded successfully', 'Add Groq API key for AI-powered insights'],
-      patterns: ['Manual review recommended'],
-      recommendations: ['Configure Groq API key to enable AI analysis'],
-      assessment: 'Basic analysis completed. Enable AI for detailed insights.'
+      analysisType: 'rule-based',
+      insights: [
+        `Dataset contains ${data.length} rows and ${headers.length} columns`,
+        'Add Groq API key for AI-powered insights',
+        'Columns: ' + headers.join(', ')
+      ],
+      summary: `Basic analysis completed. ${data.length} records found with ${headers.length} columns.`,
+      statistics: calculateBasicStats(data, headers)
     };
   }
 
   try {
-    const prompt = `Analyze the following data and provide insights in JSON format only:
+    const prompt = `Analyze this dataset and provide comprehensive insights.
 
 ${dataText}
 
-Respond with this exact JSON structure:
+Provide analysis in this JSON format:
 {
-  "insights": ["insight1", "insight2", "insight3"],
-  "patterns": ["pattern1", "pattern2"],
+  "insights": ["insight1", "insight2", "insight3", "insight4", "insight5"],
+  "patterns": ["pattern1", "pattern2", "pattern3"],
+  "keyFindings": ["finding1", "finding2", "finding3"],
   "recommendations": ["recommendation1", "recommendation2", "recommendation3"],
-  "assessment": "overall assessment in 2-3 sentences"
+  "summary": "2-3 sentence overall assessment"
 }`;
 
     const response = await groq.chat.completions.create({
@@ -200,14 +215,61 @@ Respond with this exact JSON structure:
         }
       ],
       temperature: 0.7,
-      max_tokens: 1000
+      max_tokens: 1500
     });
 
     const content = response.choices[0].message.content.trim();
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    return JSON.parse(jsonMatch ? jsonMatch[0] : content);
+    const analysis = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+
+    return {
+      analysisType: 'ai-powered',
+      ...analysis,
+      statistics: calculateBasicStats(data, headers),
+      metadata: {
+        totalRows: data.length,
+        totalColumns: headers.length,
+        columns: headers
+      }
+    };
   } catch (error) {
-    console.error('Groq evaluateWithAI Error:', error.message);
-    throw new Error(`AI evaluation failed: ${error.message}`);
+    console.error('Groq Flexible Analysis Error:', error.message);
+    return {
+      analysisType: 'rule-based-fallback',
+      insights: [
+        `Dataset contains ${data.length} rows and ${headers.length} columns`,
+        'Columns: ' + headers.join(', '),
+        'AI analysis temporarily unavailable'
+      ],
+      summary: `Basic analysis completed. ${data.length} records analyzed.`,
+      statistics: calculateBasicStats(data, headers)
+    };
   }
+};
+
+// Calculate basic statistics
+const calculateBasicStats = (data, headers) => {
+  const stats = {};
+  
+  headers.forEach(header => {
+    const values = data.map(row => row[header]).filter(v => v !== null && v !== undefined && v !== '');
+    const numericValues = values.map(v => parseFloat(v)).filter(v => !isNaN(v));
+    
+    stats[header] = {
+      totalValues: values.length,
+      uniqueValues: new Set(values).size,
+      emptyValues: data.length - values.length
+    };
+    
+    if (numericValues.length > 0) {
+      stats[header].numeric = {
+        min: Math.min(...numericValues),
+        max: Math.max(...numericValues),
+        avg: numericValues.reduce((a, b) => a + b, 0) / numericValues.length,
+        sum: numericValues.reduce((a, b) => a + b, 0)
+      };
+    }
+  });
+  
+  return stats;
 };
