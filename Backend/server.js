@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import connectDB from './src/config/database.js';
 import uploadRoutes from './src/routes/uploadRoutes.js';
 import analyzeRoutes from './src/routes/analyzeRoutes.js';
 import chatRoutes from './src/routes/chatRoutes.js';
@@ -16,9 +15,6 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// Connect to MongoDB
-connectDB();
 
 // Security middleware
 app.use(helmet());

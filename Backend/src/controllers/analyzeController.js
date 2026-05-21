@@ -2,9 +2,6 @@ import { parseCSV } from '../utils/csvParser.js';
 import { parseExcel } from '../utils/excelParser.js';
 import { groupByTeam, calculateTeamSummary, generateSummaryText } from '../utils/dataProcessor.js';
 import { evaluateTeam } from '../services/aiService.js';
-import mongoose from 'mongoose';
-import Team from '../models/Team.js';
-import ProjectAnalysis from '../models/ProjectAnalysis.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logRequest, logError } from '../middleware/logger.js';
 import path from 'path';
@@ -95,44 +92,6 @@ export const analyzeData = async (req, res, next) => {
       const summaryText = generateSummaryText(summary);
       const evaluation = await evaluateTeam({ ...summary, summaryText });
 
-      // Optional DB save
-      const isMongoConnected = mongoose.connection.readyState === 1;
-      let existingAnalysis = null;
-      if (isMongoConnected) {
-        try {
-          let team = await Team.findOne({ name: summary.teamName });
-          if (!team) {
-            team = await Team.create({ name: summary.teamName, projectTitle: summary.projectTitle });
-          } else {
-            team.projectTitle = summary.projectTitle;
-            await team.save();
-          }
-          existingAnalysis = await ProjectAnalysis.findOne({
-            teamId: team._id,
-            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-          });
-          if (!existingAnalysis) {
-            await ProjectAnalysis.create({
-              teamId: team._id,
-              teamName: summary.teamName,
-              grade: evaluation.grade,
-              score: evaluation.score,
-              strengths: evaluation.strengths,
-              weaknesses: evaluation.weaknesses,
-              suggestions: evaluation.suggestions,
-              summary: {
-                totalUpdates: summary.totalUpdates,
-                averageCompletion: summary.averageCompletion,
-                lastUpdateDate: summary.lastUpdateDate,
-                consistencyScore: summary.consistencyScore
-              }
-            });
-          }
-        } catch (dbError) {
-          console.log('DB operation skipped:', dbError.message);
-        }
-      }
-
       results[summary.teamName] = {
         grade: evaluation.grade,
         score: evaluation.score,
@@ -144,8 +103,7 @@ export const analyzeData = async (req, res, next) => {
           averageCompletion: summary.averageCompletion,
           lastUpdateDate: summary.lastUpdateDate,
           consistencyScore: summary.consistencyScore
-        },
-        cached: !!existingAnalysis
+        }
       };
     }
 
@@ -171,19 +129,13 @@ export const analyzeData = async (req, res, next) => {
 
 export const getAnalysisHistory = async (req, res, next) => {
   try {
-    const isMongoConnected = mongoose.connection.readyState === 1;
-    if (!isMongoConnected) {
-      return res.status(200).json({ success: true, data: [], count: 0, message: 'Database not connected.' });
-    }
-    const { teamName } = req.query;
-    try {
-      const query = teamName ? { teamName } : {};
-      const analyses = await ProjectAnalysis.find(query)
-        .sort({ createdAt: -1 }).limit(10).populate('teamId', 'name projectTitle');
-      res.status(200).json({ success: true, data: analyses, count: analyses.length });
-    } catch (dbError) {
-      res.status(200).json({ success: true, data: [], count: 0, message: 'Database not available.' });
-    }
+    // Return empty array since we're not using database
+    res.status(200).json({ 
+      success: true, 
+      data: [], 
+      count: 0, 
+      message: 'Analysis history not available without database. Results are shown immediately after upload.' 
+    });
   } catch (error) {
     next(error);
   }
