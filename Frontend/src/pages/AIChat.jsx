@@ -1,133 +1,219 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User } from 'lucide-react';
-import { chatWithAI } from '../services/api';
+import { Send, Bot, User, Loader } from 'lucide-react';
+import { chatWithAI, getChatHistory } from '../services/api';
+import { useLocation } from 'react-router-dom';
 
 export default function AIChat() {
-  const [messages, setMessages] = useState([
-    {
-      role: 'ai',
-      text: "Hello! I'm your AI evaluation assistant. Upload and analyze data first, then ask me questions about team performance, grades, and insights.",
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
-  const endRef = useRef();
+  const [loading, setLoading] = useState(false);
+  const [uploadId, setUploadId] = useState(null);
+  const messagesEndRef = useRef(null);
+  const location = useLocation();
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, typing]);
+    // Get uploadId from navigation state
+    if (location.state?.uploadId) {
+      setUploadId(location.state.uploadId);
+      loadChatHistory(location.state.uploadId);
+    }
+  }, [location]);
 
-  const sendMessage = async (text) => {
-    if (!text.trim() || typing) return;
+  const loadChatHistory = async (id) => {
+    try {
+      const response = await getChatHistory(id);
+      if (response.success && response.data?.messages) {
+        setMessages(response.data.messages);
+      }
+    } catch (err) {
+      console.error('Failed to load chat history:', err);
+    }
+  };
 
-    const userMsg = { role: 'user', text: text.trim() };
-    setMessages((prev) => [...prev, userMsg]);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+
+    const userMessage = input.trim();
     setInput('');
-    setTyping(true);
+    
+    // Add user message
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setLoading(true);
 
     try {
-      const response = await chatWithAI(text, true);
+      const response = await chatWithAI(userMessage, uploadId);
       
-      setMessages((prev) => [
-        ...prev,
-        { role: 'ai', text: response.answer },
-      ]);
-    } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        { 
-          role: 'ai', 
-          text: `Sorry, I encountered an error: ${error.message}. Please make sure you have uploaded and analyzed data first.`,
-          isError: true
-        },
-      ]);
+      // Add AI response
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: response.answer 
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: 'Sorry, I encountered an error. Please try again.' 
+      }]);
     } finally {
-      setTyping(false);
+      setLoading(false);
     }
   };
 
-  const handleKey = (e) => {
+  const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage(input);
+      handleSend();
     }
   };
 
-  const suggestions = [
-    'Which team is performing best?',
-    'What are common weaknesses across teams?',
-    'Which team needs the most improvement?',
+  const suggestedQuestions = [
+    "What are the key insights from this data?",
+    "What patterns do you see?",
+    "What's the average value?",
+    "Show me the top performers",
+    "What recommendations do you have?"
   ];
 
   return (
-    <div className="chat-container">
-      <div className="chat-messages">
-        {messages.map((m, i) => (
-          <div key={i} style={{ display: 'flex', gap: 10, alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', flexDirection: m.role === 'user' ? 'row-reverse' : 'row' }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-              background: m.role === 'ai' ? 'var(--primary-bg)' : 'var(--primary)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: m.role === 'ai' ? 'var(--primary)' : '#fff',
-            }}>
-              {m.role === 'ai' ? <Bot size={16} /> : <User size={16} />}
-            </div>
-            <div className={`chat-bubble ${m.role === 'ai' ? 'ai' : 'user'}`} style={m.isError ? { background: 'var(--danger-bg)', color: 'var(--danger)' } : {}}>
-              {m.text.split('\n').map((line, j) => (
-                <span key={j}>
-                  {line.replace(/\*\*(.*?)\*\*/g, '«$1»').split('«').map((part, k) => {
-                    if (part.includes('»')) {
-                      const [bold, rest] = part.split('»');
-                      return <span key={k}><strong>{bold}</strong>{rest}</span>;
-                    }
-                    return part;
-                  })}
-                  {j < m.text.split('\n').length - 1 && <br />}
-                </span>
+    <div style={{ maxWidth: 900, margin: '0 auto', height: 'calc(100vh - 200px)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>AI Chat Assistant</h2>
+        <p style={{ fontSize: 14, color: 'var(--gray-500)' }}>
+          {uploadId ? 'Ask questions about your uploaded data' : 'Upload a file first to enable context-aware chat'}
+        </p>
+      </div>
+
+      {!uploadId && messages.length === 0 && (
+        <div className="panel" style={{ padding: 40, textAlign: 'center', marginBottom: 20 }}>
+          <Bot size={48} style={{ color: 'var(--gray-400)', margin: '0 auto 16px' }} />
+          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>No Data Uploaded</h3>
+          <p style={{ color: 'var(--gray-500)', marginBottom: 20 }}>
+            Upload and analyze a file to enable context-aware chat
+          </p>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div className="panel" style={{ flex: 1, padding: 20, overflowY: 'auto', marginBottom: 16 }}>
+        {messages.length === 0 && uploadId && (
+          <div style={{ textAlign: 'center', padding: 40 }}>
+            <Bot size={48} style={{ color: 'var(--primary)', margin: '0 auto 16px' }} />
+            <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Start a conversation</h3>
+            <p style={{ fontSize: 14, color: 'var(--gray-500)', marginBottom: 20 }}>
+              Try asking one of these questions:
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 400, margin: '0 auto' }}>
+              {suggestedQuestions.map((q, idx) => (
+                <button
+                  key={idx}
+                  className="btn btn-outline"
+                  onClick={() => setInput(q)}
+                  style={{ textAlign: 'left', fontSize: 13 }}
+                >
+                  {q}
+                </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((msg, idx) => (
+          <div
+            key={idx}
+            style={{
+              display: 'flex',
+              gap: 12,
+              marginBottom: 20,
+              alignItems: 'start'
+            }}
+          >
+            <div style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: msg.role === 'user' ? 'var(--primary)' : 'var(--gray-200)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              {msg.role === 'user' ? (
+                <User size={20} style={{ color: 'white' }} />
+              ) : (
+                <Bot size={20} style={{ color: 'var(--gray-700)' }} />
+              )}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{
+                background: msg.role === 'user' ? 'var(--primary-bg)' : 'var(--gray-50)',
+                padding: 12,
+                borderRadius: 8,
+                fontSize: 14,
+                lineHeight: 1.6
+              }}>
+                {msg.content}
+              </div>
             </div>
           </div>
         ))}
 
-        {typing && (
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        {loading && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'start' }}>
             <div style={{
-              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-              background: 'var(--primary-bg)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--primary)',
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'var(--gray-200)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}>
-              <Bot size={16} />
+              <Bot size={20} style={{ color: 'var(--gray-700)' }} />
             </div>
-            <div className="chat-bubble ai" style={{ display: 'flex', gap: 4, padding: '16px 22px' }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gray-400)', animation: 'pulse 1.2s ease infinite' }} />
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gray-400)', animation: 'pulse 1.2s ease infinite .2s' }} />
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gray-400)', animation: 'pulse 1.2s ease infinite .4s' }} />
+            <div style={{
+              background: 'var(--gray-50)',
+              padding: 12,
+              borderRadius: 8
+            }}>
+              <Loader className="spinner" size={16} />
             </div>
           </div>
         )}
-        <div ref={endRef} />
+
+        <div ref={messagesEndRef} />
       </div>
 
-      {messages.length <= 1 && (
-        <div className="suggestion-chips">
-          {suggestions.map((s, i) => (
-            <button key={i} className="suggestion-chip" onClick={() => sendMessage(s)}>
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="chat-input-bar">
+      {/* Input */}
+      <div style={{ display: 'flex', gap: 12 }}>
         <input
+          type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKey}
-          placeholder="Ask about team performance, grades, suggestions…"
-          disabled={typing}
+          onKeyPress={handleKeyPress}
+          placeholder={uploadId ? "Ask a question about your data..." : "Upload a file first..."}
+          disabled={!uploadId || loading}
+          style={{
+            flex: 1,
+            padding: '12px 16px',
+            border: '1px solid var(--gray-200)',
+            borderRadius: 8,
+            fontSize: 14,
+            outline: 'none'
+          }}
         />
-        <button onClick={() => sendMessage(input)} disabled={typing || !input.trim()}>
+        <button
+          className="btn btn-primary"
+          onClick={handleSend}
+          disabled={!input.trim() || loading || !uploadId}
+          style={{ padding: '12px 20px' }}
+        >
           <Send size={18} />
         </button>
       </div>

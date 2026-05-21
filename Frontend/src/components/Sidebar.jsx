@@ -7,14 +7,16 @@ import {
   MessageSquare,
   FileText,
   Sparkles,
+  Clock,
 } from 'lucide-react'
 
 const links = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/upload', icon: Upload, label: 'Upload Data' },
+  { to: '/upload', icon: Upload, label: 'Upload & Analyze' },
+  { to: '/history', icon: Clock, label: 'History' },
+  { to: '/chat', icon: MessageSquare, label: 'AI Chat' },
   { to: '/teams', icon: Users, label: 'Team Analysis' },
   { to: '/evaluation', icon: Sparkles, label: 'AI Evaluation' },
-  { to: '/chat', icon: MessageSquare, label: 'AI Chat Assistant' },
   { to: '/reports', icon: FileText, label: 'Reports' },
 ]
 
@@ -27,7 +29,7 @@ export default function Sidebar() {
         <div className="logo-icon">
           <Bot size={20} />
         </div>
-        <h1>EvaluateAI</h1>
+        <h1>Excel Analyzer</h1>
       </div>
 
       <nav className="sidebar-nav">
@@ -46,8 +48,8 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         <div className="sidebar-footer-card">
           <Sparkles size={28} style={{ color: 'var(--primary)', marginBottom: 8 }} />
-          <p>Unlock advanced AI analysis features</p>
-          <button>Upgrade Pro</button>
+          <p>AI-powered data analysis with Groq</p>
+          <button>Learn More</button>
         </div>
       </div>
     </aside>

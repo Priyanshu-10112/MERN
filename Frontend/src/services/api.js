@@ -7,7 +7,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 60000, // 60 seconds for AI operations
+  timeout: 120000, // 120 seconds for AI operations
 });
 
 // Request interceptor
@@ -34,8 +34,8 @@ api.interceptors.response.use(
   }
 );
 
-// API methods
-export const uploadCSV = async (file) => {
+// Upload & Parse File
+export const uploadFile = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -48,9 +48,18 @@ export const uploadCSV = async (file) => {
   return response.data;
 };
 
-export const analyzeCSV = async (file) => {
+// Analyze File with Options
+export const analyzeFile = async (file, options = {}) => {
   const formData = new FormData();
   formData.append('file', file);
+  
+  if (options.columnMapping) {
+    formData.append('columnMapping', JSON.stringify(options.columnMapping));
+  }
+  
+  if (options.analysisType) {
+    formData.append('analysisType', options.analysisType);
+  }
 
   const response = await api.post('/api/analyze', formData, {
     headers: {
@@ -58,41 +67,82 @@ export const analyzeCSV = async (file) => {
     },
   });
 
-  // Save to localStorage for demo (since no MongoDB)
-  if (response.data && response.data.success && response.data.data) {
-    localStorage.setItem('lastAnalysis', JSON.stringify(response.data.data));
-    localStorage.setItem('lastAnalysisTime', new Date().toISOString());
-  }
-
   return response.data;
 };
 
-export const chatWithAI = async (question, includeContext = true) => {
+// Chat with AI (Context-aware)
+export const chatWithAI = async (question, uploadId = null) => {
   const response = await api.post('/api/chat', {
     question,
-    includeContext,
+    uploadId,
   });
 
   return response.data;
 };
 
-export const getAnalysisHistory = async (teamName = null) => {
-  const params = teamName ? { teamName } : {};
-  const response = await api.get('/api/analyze/history', { params });
+// Get Upload History
+export const getUploadHistory = async (limit = 20, page = 1) => {
+  const response = await api.get('/api/history/uploads', {
+    params: { limit, page }
+  });
 
-  // If no data from server, try localStorage
-  if (!response.data || response.data.count === 0) {
-    const lastAnalysis = localStorage.getItem('lastAnalysis');
-    if (lastAnalysis) {
-      const data = JSON.parse(lastAnalysis);
-      return {
-        success: true,
-        data,
-        count: Object.keys(data).length,
-        fromCache: true
-      };
-    }
+  return response.data;
+};
+
+// Get Analysis History
+export const getAnalysisHistory = async () => {
+  const response = await api.get('/api/analyze/history');
+  return response.data;
+};
+
+// Get Specific Analysis
+export const getAnalysisById = async (id) => {
+  const response = await api.get(`/api/history/analysis/${id}`);
+  return response.data;
+};
+
+// Get Chat History
+export const getChatHistory = async (uploadId) => {
+  const response = await api.get(`/api/history/chat/${uploadId}`);
+  return response.data;
+};
+
+// Get File Structure (for preview)
+export const getFileStructure = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await api.post('/api/flexible/structure', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data;
+};
+
+// Flexible Analysis
+export const flexibleAnalyze = async (file, options = {}) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  if (options.columnMapping) {
+    formData.append('columnMapping', JSON.stringify(options.columnMapping));
   }
+  
+  if (options.analyzeType) {
+    formData.append('analyzeType', options.analyzeType);
+  }
+  
+  if (options.rowRange) {
+    formData.append('rowRange', JSON.stringify(options.rowRange));
+  }
+
+  const response = await api.post('/api/flexible/analyze', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
 
   return response.data;
 };
