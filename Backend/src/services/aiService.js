@@ -83,7 +83,7 @@ Provide your evaluation in the following JSON format only (no extra text):
 }`;
 
     const response = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
@@ -140,7 +140,7 @@ export const chatWithAI = async (question, context = null) => {
     }
 
     const response = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
@@ -203,7 +203,7 @@ Provide analysis in this JSON format:
 }`;
 
     const response = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',

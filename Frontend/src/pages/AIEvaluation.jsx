@@ -18,9 +18,31 @@ export default function AIEvaluation() {
       try {
         const response = await getAnalysisHistory();
         
-        if (response.data && response.data.length > 0) {
-          setEvaluations(response.data);
-          setSelected(response.data[0]._id);
+        // Get LATEST analysis only
+        const teamList = [];
+        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+          const latestAnalysis = response.data[0]; // Most recent
+          
+          if (latestAnalysis.analysisType === 'team-evaluation' && latestAnalysis.results) {
+            // Extract teams from latest analysis
+            Object.entries(latestAnalysis.results).forEach(([teamName, teamData]) => {
+              teamList.push({
+                _id: `${latestAnalysis._id}-${teamName}`,
+                teamName,
+                grade: teamData.grade || 'N/A',
+                score: teamData.score || 0,
+                strengths: teamData.strengths || [],
+                weaknesses: teamData.weaknesses || [],
+                suggestions: teamData.suggestions || [],
+                summary: teamData.summary || {}
+              });
+            });
+          }
+        }
+        
+        if (teamList.length > 0) {
+          setEvaluations(teamList);
+          setSelected(teamList[0]._id);
         } else {
           setEvaluations([]);
         }
@@ -129,7 +151,7 @@ export default function AIEvaluation() {
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Score: {e.score}/100</div>
               </div>
-              <span className={`grade-badge grade-${e.grade.toLowerCase()}`}>{e.grade}</span>
+              <span className={`grade-badge grade-${(e.grade || 'na').toLowerCase()}`}>{e.grade || 'N/A'}</span>
             </div>
           ))}
         </div>
@@ -138,11 +160,11 @@ export default function AIEvaluation() {
         {selectedEval && (
           <div className="panel">
             <div style={{ textAlign: 'center', marginBottom: 28 }}>
-              <div className={`eval-big-grade ${selectedEval.grade.toLowerCase()}`}>
-                {selectedEval.grade}
+              <div className={`eval-big-grade ${(selectedEval.grade || 'na').toLowerCase()}`}>
+                {selectedEval.grade || 'N/A'}
               </div>
               <div className="eval-score">
-                {selectedEval.score} <span>/ 100</span>
+                {selectedEval.score || 0} <span>/ 100</span>
               </div>
               <div style={{ fontSize: 14, color: 'var(--gray-500)', marginTop: 6 }}>
                 {selectedEval.teamName} — Overall Evaluation

@@ -19,11 +19,28 @@ export default function Reports() {
       try {
         const response = await getAnalysisHistory();
         
-        if (response.data && response.data.length > 0) {
-          setReportData(response.data);
-        } else {
-          setReportData([]);
+        // Get LATEST analysis only
+        const teamList = [];
+        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+          const latestAnalysis = response.data[0]; // Most recent
+          
+          if (latestAnalysis.analysisType === 'team-evaluation' && latestAnalysis.results) {
+            // Extract teams from latest analysis
+            Object.entries(latestAnalysis.results).forEach(([teamName, teamData]) => {
+              teamList.push({
+                teamName,
+                grade: teamData.grade || 'N/A',
+                score: teamData.score || 0,
+                strengths: teamData.strengths || [],
+                weaknesses: teamData.weaknesses || [],
+                suggestions: teamData.suggestions || [],
+                summary: teamData.summary || {}
+              });
+            });
+          }
         }
+        
+        setReportData(teamList);
       } catch (err) {
         setError(err.message || 'Failed to load report data');
         setReportData([]);
@@ -261,7 +278,7 @@ export default function Reports() {
                   <td style={{ fontWeight: 600 }}>{r.teamName}</td>
                   <td style={{ fontWeight: 600 }}>{r.score}/100</td>
                   <td>
-                    <span className={`grade-badge grade-${r.grade.toLowerCase()}`}>{r.grade}</span>
+                    <span className={`grade-badge grade-${(r.grade || 'na').toLowerCase()}`}>{r.grade || 'N/A'}</span>
                   </td>
                   <td>{r.summary?.averageCompletion || 0}%</td>
                   <td>{r.summary?.totalUpdates || 0}</td>

@@ -301,6 +301,47 @@ export default function EnhancedUpload() {
             ))}
           </div>
 
+          {/* Column Mapping for Team Evaluation */}
+          {analysisType === 'team-evaluation' && uploadData?.metadata?.columns && (
+            <div style={{ marginBottom: 24, padding: 16, background: 'var(--gray-50)', borderRadius: 8 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Map Your Columns</h4>
+              <p style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 16 }}>
+                Match your file columns to the required fields:
+              </p>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {[
+                  { key: 'teamName', label: 'Team Name', required: true },
+                  { key: 'projectTitle', label: 'Project Title', required: true },
+                  { key: 'update', label: 'Update/Progress', required: true },
+                  { key: 'completion', label: 'Completion %', required: true },
+                  { key: 'date', label: 'Date', required: true }
+                ].map(field => (
+                  <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <label style={{ width: 150, fontSize: 13, fontWeight: 500 }}>
+                      {field.label} {field.required && <span style={{ color: 'var(--danger)' }}>*</span>}
+                    </label>
+                    <select
+                      value={columnMapping[field.key] || ''}
+                      onChange={(e) => setColumnMapping({ ...columnMapping, [field.key]: e.target.value })}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        border: '1px solid var(--gray-200)',
+                        borderRadius: 6,
+                        fontSize: 13
+                      }}
+                    >
+                      <option value="">-- Select Column --</option>
+                      {uploadData.metadata.columns.map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 12 }}>
             <button className="btn btn-primary" onClick={handleStartAnalysis}>
               <BarChart3 size={16} />

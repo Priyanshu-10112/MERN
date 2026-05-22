@@ -140,7 +140,7 @@ export const analyzeData = async (req, res, next) => {
           metadata: {
             processingTime: `${Date.now() - startTime}ms`,
             recordCount: parsedData.length,
-            aiModel: 'groq-llama3-8b-8192'
+            aiModel: 'llama-3.3-70b-versatile'
           }
         });
       } catch (dbError) {
